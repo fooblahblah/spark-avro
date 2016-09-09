@@ -21,9 +21,9 @@ import java.net.URI
 import java.util.zip.Deflater
 
 import scala.util.control.NonFatal
-
 import com.databricks.spark.avro.DefaultSource.{AvroSchema, IgnoreFilesWithoutExtensionProperty, SerializableConfiguration}
-import com.esotericsoftware.kryo.DefaultSerializer
+import com.esotericsoftware.kryo.io.{Input, Output}
+import com.esotericsoftware.kryo.{DefaultSerializer, Kryo, KryoSerializable}
 import com.esotericsoftware.kryo.serializers.{JavaSerializer => KryoJavaSerializer}
 import org.apache.avro.{Schema, SchemaBuilder}
 import org.apache.avro.file.{DataFileConstants, DataFileReader}
@@ -34,7 +34,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileStatus, Path}
 import org.apache.hadoop.mapreduce.Job
 import org.slf4j.LoggerFactory
-
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
@@ -188,8 +187,8 @@ private[avro] object DefaultSource {
 
   val AvroSchema = "avroSchema"
 
-  @DefaultSerializer(classOf[KryoJavaSerializer])
-  class SerializableConfiguration(@transient var value: Configuration) extends Serializable {
+  class SerializableConfiguration(@transient var value: Configuration)
+    extends Serializable with KryoSerializable {
     @transient private[avro] lazy val log = LoggerFactory.getLogger(getClass)
 
     private def writeObject(out: ObjectOutputStream): Unit = tryOrIOException {
@@ -213,6 +212,17 @@ private[avro] object DefaultSource {
           log.error("Exception encountered", e)
           throw new IOException(e)
       }
+    }
+
+    def write(kryo: Kryo, out: Output): Unit = {
+      val dos = new DataOutputStream(out)
+      value.write(dos)
+      dos.flush()
+    }
+
+    def read(kryo: Kryo, in: Input): Unit = {
+      value = new Configuration(false)
+      value.readFields(new DataInputStream(in))
     }
   }
 }
